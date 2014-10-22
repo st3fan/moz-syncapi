@@ -5,6 +5,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/st3fan/moz-syncapi/syncapi"
@@ -13,25 +14,31 @@ import (
 )
 
 const (
-	DEFAULT_API_PREFIX         = "/"
-	DEFAULT_API_LISTEN_ADDRESS = "0.0.0.0"
-	DEFAULT_API_LISTEN_PORT    = 9091
+	DEFAULT_API_ROOT    = "/"
+	DEFAULT_API_ADDRESS = "0.0.0.0"
+	DEFAULT_API_PORT    = 8080
 )
 
 func main() {
 
+	root := flag.String("root", DEFAULT_API_ROOT, "web root context")
+	address := flag.String("address", DEFAULT_API_ADDRESS, "address to bind to")
+	port := flag.Int("port", DEFAULT_API_PORT, "port to listen on")
+
+	flag.Parse()
+
 	config := syncapi.DefaultConfig()
 
 	router := mux.NewRouter()
-	_, err := syncapi.SetupRouter(router.PathPrefix(DEFAULT_API_PREFIX).Subrouter(), config)
+	_, err := syncapi.SetupRouter(router.PathPrefix(*root).Subrouter(), config)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	http.Handle("/", router)
 
-	addr := fmt.Sprintf("%s:%d", DEFAULT_API_LISTEN_ADDRESS, DEFAULT_API_LISTEN_PORT)
-	log.Printf("Starting syncapi server on http://%s%s", addr, DEFAULT_API_PREFIX)
+	addr := fmt.Sprintf("%s:%d", *address, *port)
+	log.Printf("Starting syncapi server on http://%s%s", addr, *root)
 	err = http.ListenAndServe(addr, nil)
 	if err != nil {
 		log.Fatal(err)
