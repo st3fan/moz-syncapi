@@ -23,12 +23,14 @@ import (
 )
 
 const (
-	ASSERTION_OFFSET   = time.Duration(15) * time.Second
-	ASSERTION_DURATION = time.Duration(24*60*60) * time.Second
+	CREDENTIALS_CACHE_TTL = time.Duration(24*60*60) * time.Second
+	ASSERTION_OFFSET      = time.Duration(15) * time.Second
+	ASSERTION_DURATION    = time.Duration(24*60*60) * time.Second
 )
 
 type Application struct {
-	config Config
+	config           Config
+	credentialsCache *CredentialsCache
 }
 
 type Credentials struct {
@@ -97,6 +99,11 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 		return nil
 	}
 
+	credentials, ok := app.credentialsCache.Get(usernameAndPassword[0], usernameAndPassword[1])
+	if ok {
+		return &credentials
+	}
+
 	// Do the FxA dance
 
 	client, err := fxa.NewClient(usernameAndPassword[0], usernameAndPassword[1])
@@ -148,7 +155,7 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 
 	//
 
-	return &Credentials{
+	credentials = Credentials{
 		Username:    usernameAndPassword[0],
 		Password:    usernameAndPassword[1],
 		KeyA:        client.KeyA,
@@ -157,6 +164,10 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 		ApiKeyId:    tokenServerResponse.Id,
 		ApiKey:      tokenServerResponse.Key,
 	}
+
+	app.credentialsCache.Put(credentials)
+
+	return &credentials
 }
 
 //
@@ -228,7 +239,10 @@ func (app *Application) HandleTabs(w http.ResponseWriter, r *http.Request) {
 //
 
 func SetupRouter(r *mux.Router, config Config) (*Application, error) {
-	app := &Application{config: config}
+	app := &Application{
+		config:           config,
+		credentialsCache: NewCredentialsCache(CREDENTIALS_CACHE_TTL),
+	}
 	r.HandleFunc("/1.0/profile", app.HandleProfile)
 	r.HandleFunc("/1.0/tabs", app.HandleTabs)
 	return app, nil
