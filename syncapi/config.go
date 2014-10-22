@@ -4,16 +4,11 @@
 
 package syncapi
 
-const (
-	DEFAULT_PERSONA_VERIFIER = "https://verifier.accounts.firefox.com/v2"
-)
+const ()
 
 type Config struct {
-	PersonaVerifier string
 }
 
 func DefaultConfig() Config {
-	return Config{
-		PersonaVerifier: DEFAULT_PERSONA_VERIFIER,
-	}
+	return Config{}
 }
