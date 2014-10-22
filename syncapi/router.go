@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"github.com/gorilla/mux"
 	"github.com/st3fan/gofxa/fxa"
 	"github.com/st3fan/gowebtoken/webtoken"
@@ -159,6 +160,20 @@ func (app *Application) HandleProfile(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+//
+
+type Tab struct {
+	Title      string   `json:"title"`
+	URLHistory []string `json:"urlHistory"`
+	Icon       string   `json:"icon"`
+}
+
+type TabsPayload struct {
+	Id         string `json:"id"`
+	ClientName string `json:"clientName"`
+	Tabs       []Tab  `json:"tabs"`
+}
+
 func (app *Application) HandleTabs(w http.ResponseWriter, r *http.Request) {
 	if credentials := app.authenticate(w, r); credentials != nil {
 		storageClient, err := sync.NewStorageClient(credentials.ApiEndpoint, credentials.ApiKeyId, credentials.ApiKey, credentials.KeyB)
@@ -173,7 +188,34 @@ func (app *Application) HandleTabs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Print("KEY BUNDLE: ", keyBundle)
+		// Load the tabs
+
+		records, err := storageClient.GetEncryptedRecords("tabs", keyBundle)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Parse the payload into Tab structs, then serialize that as a response
+
+		tabsPayloads := []TabsPayload{}
+		for _, record := range records {
+			tabsPayload := TabsPayload{}
+			if err = json.Unmarshal([]byte(record.Payload), &tabsPayload); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			tabsPayloads = append(tabsPayloads, tabsPayload)
+		}
+
+		encodedTabs, err := json.Marshal(tabsPayloads)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(encodedTabs)
 	}
 }
 

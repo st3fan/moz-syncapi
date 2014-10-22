@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 )
 
@@ -51,8 +50,6 @@ func (tc *TokenClient) ExchangeToken(assertion, service, version, clientState st
 	if err != nil {
 		return nil, err
 	}
-
-	log.Print("Body: ", string(body))
 
 	if res.StatusCode != http.StatusOK {
 		return nil, errors.New(res.Status) // TODO: Proper errors based on what the server returns

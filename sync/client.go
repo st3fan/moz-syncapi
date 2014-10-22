@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/
+
 package sync
 
 import (
@@ -199,4 +203,48 @@ func (sc *StorageClient) GetEncryptedRecord(collectionName, recordId string, key
 	}
 
 	return record, nil
+}
+
+func (sc *StorageClient) GetEncryptedRecords(collectionName string, keyBundle KeyBundle) ([]Record, error) {
+	req, err := http.NewRequest("GET", sc.endpoint+"/storage/"+collectionName+"?full=1", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	hawkCredentials := fxa.NewHawkCredentials(sc.hawkKeyId, []byte(sc.hawkKey))
+	if err := hawkCredentials.AuthorizeRequest(req, nil, ""); err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return nil, errors.New(res.Status) // TODO: Proper errors based on what the server returns
+	}
+
+	records := []Record{}
+	if err = json.Unmarshal(body, &records); err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < len(records); i++ {
+		if err := records[i].Decrypt(keyBundle); err != nil {
+			return nil, err
+		}
+	}
+
+	return records, nil
 }
