@@ -1,0 +1,4 @@
+package syncapi
+
+func NewClient() {
+}
