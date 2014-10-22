@@ -15,7 +15,7 @@ import (
 const (
 	DEFAULT_API_PREFIX         = "/"
 	DEFAULT_API_LISTEN_ADDRESS = "0.0.0.0"
-	DEFAULT_API_LISTEN_PORT    = 9090
+	DEFAULT_API_LISTEN_PORT    = 9091
 )
 
 func main() {
