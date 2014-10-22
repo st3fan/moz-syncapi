@@ -60,28 +60,34 @@ func deriveClientStateFromKey(key []byte) string {
 	return hex.EncodeToString(hash.Sum(nil)[0:16])
 }
 
+func requireBasicAuth(w http.ResponseWriter, message string) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="API"`)
+	w.WriteHeader(401)
+	w.Write([]byte("401 " + message + "\n"))
+}
+
 func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Credentials {
 	// Grab the credentials from basic auth
 
 	authorization := r.Header.Get("Authorization")
 	if len(authorization) == 0 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		requireBasicAuth(w, "Authorization Required")
 		return nil
 	}
 
 	tokens := strings.SplitN(authorization, " ", 2)
 	if len(tokens) != 2 {
-		http.Error(w, "Unsupported authorization method", http.StatusUnauthorized)
+		requireBasicAuth(w, "Invalid Authorization Header (Truncated)")
 		return nil
 	}
 	if tokens[0] != "Basic" {
-		http.Error(w, "Unsupported authorization method", http.StatusUnauthorized)
+		requireBasicAuth(w, "Invalid Authorization Header (Method not Basic)")
 		return nil
 	}
 
 	usernamePassword, err := base64.StdEncoding.DecodeString(tokens[1])
 	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		requireBasicAuth(w, "Invalid Authorization Header (Failed to decode credentials)")
 		return nil
 	}
 
