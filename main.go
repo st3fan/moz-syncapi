@@ -20,11 +20,9 @@ const (
 )
 
 func main() {
-
 	root := flag.String("root", DEFAULT_API_ROOT, "web root context")
 	address := flag.String("address", DEFAULT_API_ADDRESS, "address to bind to")
 	port := flag.Int("port", DEFAULT_API_PORT, "port to listen on")
-
 	flag.Parse()
 
 	config := syncapi.DefaultConfig()
