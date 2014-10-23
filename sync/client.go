@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 )
 
 type EncryptedPayload struct {
@@ -33,7 +34,7 @@ type Record struct {
 	Payload  string  `json:"payload"`
 }
 
-func (r *Record) Decrypt(keyBundle KeyBundle) error {
+func (r *Record) Decrypt(keyBundle *KeyBundle) error {
 	encryptedPayload := &EncryptedPayload{}
 	if err := json.Unmarshal([]byte(r.Payload), encryptedPayload); err != nil {
 		return errors.New("Record does not have an encrypted payload")
@@ -89,12 +90,12 @@ type KeyBundle struct {
 	ValidationKey []byte
 }
 
-func NewKeyBundle(key []byte) (KeyBundle, error) {
+func NewKeyBundle(key []byte) (*KeyBundle, error) {
 	secret := make([]byte, 2*32)
 	if _, err := io.ReadFull(hkdf.New(sha256.New, key, nil, []byte("identity.mozilla.com/picl/v1/oldsync")), secret); err != nil {
-		return KeyBundle{}, err
+		return nil, err
 	}
-	return KeyBundle{
+	return &KeyBundle{
 		EncryptionKey: secret[0:32],
 		ValidationKey: secret[32:64],
 	}, nil
@@ -107,6 +108,7 @@ type StorageClient struct {
 	hawkKeyId string
 	hawkKey   string
 	secret    []byte
+	keyBundle KeyBundle
 }
 
 func NewStorageClient(endpoint, hawkKeyId, hawkKey string, secret []byte) (*StorageClient, error) {
@@ -192,10 +194,14 @@ func (sc *StorageClient) GetRecord(collectionName, recordId string) (Record, err
 	return record, nil
 }
 
-func (sc *StorageClient) GetEncryptedRecord(collectionName, recordId string, keyBundle KeyBundle) (Record, error) {
+func (sc *StorageClient) GetEncryptedRecord(collectionName, recordId string, keyBundle *KeyBundle) (Record, error) {
 	record, err := sc.GetRecord(collectionName, recordId)
 	if err != nil {
 		return Record{}, err
+	}
+
+	if keyBundle == nil {
+		keyBundle = &sc.keyBundle
 	}
 
 	if err := record.Decrypt(keyBundle); err != nil {
@@ -205,8 +211,23 @@ func (sc *StorageClient) GetEncryptedRecord(collectionName, recordId string, key
 	return record, nil
 }
 
-func (sc *StorageClient) GetEncryptedRecords(collectionName string, keyBundle KeyBundle) ([]Record, error) {
-	req, err := http.NewRequest("GET", sc.endpoint+"/storage/"+collectionName+"?full=1", nil)
+type GetRecordsOptions struct {
+	Limit int
+	Sort  string
+}
+
+func (sc *StorageClient) GetEncryptedRecords(collectionName string, keyBundle *KeyBundle, options *GetRecordsOptions) ([]Record, error) {
+	url := sc.endpoint + "/storage/" + collectionName + "?full=1"
+	if options != nil {
+		if options.Limit != 0 {
+			url += "&limit=" + strconv.Itoa(options.Limit)
+		}
+		if options.Sort != "" {
+			url += "&sort=" + options.Sort
+		}
+	}
+
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -240,6 +261,10 @@ func (sc *StorageClient) GetEncryptedRecords(collectionName string, keyBundle Ke
 		return nil, err
 	}
 
+	if keyBundle == nil {
+		keyBundle = &sc.keyBundle
+	}
+
 	for i := 0; i < len(records); i++ {
 		if err := records[i].Decrypt(keyBundle); err != nil {
 			return nil, err
@@ -247,4 +272,13 @@ func (sc *StorageClient) GetEncryptedRecords(collectionName string, keyBundle Ke
 	}
 
 	return records, nil
+}
+
+func (sc *StorageClient) Login() error {
+	keyBundle, err := sc.FetchKeys()
+	if err != nil {
+		return err
+	}
+	sc.keyBundle = keyBundle
+	return nil
 }
