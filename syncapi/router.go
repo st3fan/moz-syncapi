@@ -18,6 +18,7 @@ import (
 	"github.com/st3fan/moz-syncapi/tokenclient"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -255,17 +256,31 @@ type HistoryPayload struct {
 	Visits []HistoryVisit `json:"visits"`
 }
 
+type HistoryPayloads []HistoryPayload
+
+func (slice HistoryPayloads) Len() int {
+	return len(slice)
+}
+
+func (slice HistoryPayloads) Less(i, j int) bool {
+	return slice[i].Visits[0].Date < slice[j].Visits[0].Date
+}
+
+func (slice HistoryPayloads) Swap(i, j int) {
+	slice[i], slice[j] = slice[j], slice[i]
+}
+
 func (app *Application) HandleHistoryRecent(w http.ResponseWriter, r *http.Request) {
 	if credentials := app.authenticate(w, r); credentials != nil {
 		if storageClient := app.login(w, r, credentials); storageClient != nil {
 			// Load the most recent history
-			records, err := storageClient.GetEncryptedRecords("history", nil, &sync.GetRecordsOptions{Limit: 5, Sort: "newest"})
+			records, err := storageClient.GetEncryptedRecords("history", nil, &sync.GetRecordsOptions{Limit: 100, Sort: "newest"})
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			historyPayloads := []HistoryPayload{}
+			historyPayloads := HistoryPayloads{}
 			for _, record := range records {
 				historyPayload := HistoryPayload{}
 				if err = json.Unmarshal([]byte(record.Payload), &historyPayload); err != nil {
@@ -274,6 +289,8 @@ func (app *Application) HandleHistoryRecent(w http.ResponseWriter, r *http.Reque
 				}
 				historyPayloads = append(historyPayloads, historyPayload)
 			}
+
+			sort.Sort(sort.Reverse(historyPayloads))
 
 			encodedHistory, err := json.Marshal(historyPayloads)
 			if err != nil {
