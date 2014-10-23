@@ -191,48 +191,99 @@ type TabsPayload struct {
 	Tabs       []Tab  `json:"tabs"`
 }
 
+func (app *Application) login(w http.ResponseWriter, r *http.Request, credentials *Credentials) *sync.StorageClient {
+	storageClient, err := sync.NewStorageClient(credentials.ApiEndpoint, credentials.ApiKeyId, credentials.ApiKey, credentials.KeyB)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil
+	}
+
+	if err := storageClient.Login(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil
+	}
+
+	return storageClient
+}
+
 func (app *Application) HandleTabs(w http.ResponseWriter, r *http.Request) {
 	if credentials := app.authenticate(w, r); credentials != nil {
-		storageClient, err := sync.NewStorageClient(credentials.ApiEndpoint, credentials.ApiKeyId, credentials.ApiKey, credentials.KeyB)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			// Load the tabs
 
-		keyBundle, err := storageClient.FetchKeys()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Load the tabs
-
-		records, err := storageClient.GetEncryptedRecords("tabs", keyBundle)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Parse the payload into Tab structs, then serialize that as a response
-
-		tabsPayloads := []TabsPayload{}
-		for _, record := range records {
-			tabsPayload := TabsPayload{}
-			if err = json.Unmarshal([]byte(record.Payload), &tabsPayload); err != nil {
+			records, err := storageClient.GetEncryptedRecords("tabs", nil, nil)
+			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			tabsPayloads = append(tabsPayloads, tabsPayload)
-		}
 
-		encodedTabs, err := json.Marshal(tabsPayloads)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+			// Parse the payload into Tab structs, then serialize that as a response
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(encodedTabs)
+			tabsPayloads := []TabsPayload{}
+			for _, record := range records {
+				tabsPayload := TabsPayload{}
+				if err = json.Unmarshal([]byte(record.Payload), &tabsPayload); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				tabsPayloads = append(tabsPayloads, tabsPayload)
+			}
+
+			encodedTabs, err := json.Marshal(tabsPayloads)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(encodedTabs)
+		}
+	}
+}
+
+//
+
+type HistoryVisit struct {
+	Date int `json:"date"`
+	Type int `json:"type"`
+}
+
+type HistoryPayload struct {
+	Id     string         `json:"id"`
+	URL    string         `json:"histUri"`
+	Title  string         `json:"title"`
+	Visits []HistoryVisit `json:"visits"`
+}
+
+func (app *Application) HandleHistoryRecent(w http.ResponseWriter, r *http.Request) {
+	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			// Load the most recent history
+			records, err := storageClient.GetEncryptedRecords("history", nil, &sync.GetRecordsOptions{Limit: 5, Sort: "newest"})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			historyPayloads := []HistoryPayload{}
+			for _, record := range records {
+				historyPayload := HistoryPayload{}
+				if err = json.Unmarshal([]byte(record.Payload), &historyPayload); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				historyPayloads = append(historyPayloads, historyPayload)
+			}
+
+			encodedHistory, err := json.Marshal(historyPayloads)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(encodedHistory)
+		}
 	}
 }
 
@@ -245,5 +296,6 @@ func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	}
 	r.HandleFunc("/1.0/profile", app.HandleProfile)
 	r.HandleFunc("/1.0/tabs", app.HandleTabs)
+	r.HandleFunc("/1.0/history/recent", app.HandleHistoryRecent)
 	return app, nil
 }
