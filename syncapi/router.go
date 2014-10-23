@@ -263,6 +263,12 @@ func (slice HistoryPayloads) Len() int {
 }
 
 func (slice HistoryPayloads) Less(i, j int) bool {
+	if len(slice[i].Visits) == 0 {
+		return false
+	}
+	if len(slice[j].Visits) == 0 {
+		return true
+	}
 	return slice[i].Visits[0].Date < slice[j].Visits[0].Date
 }
 
