@@ -22,6 +22,8 @@ import (
 	"strconv"
 )
 
+const USER_AGENT = "SyncAPI/0.1 (https://github.com/st3fan/moz-syncapi)"
+
 type EncryptedPayload struct {
 	CipherText string `json:"ciphertext"`
 	IV         string `json:"IV"`
@@ -164,6 +166,7 @@ func (sc *StorageClient) GetRecord(collectionName, recordId string) (Record, err
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", USER_AGENT)
 
 	hawkCredentials := fxa.NewHawkCredentials(sc.hawkKeyId, []byte(sc.hawkKey))
 	if err := hawkCredentials.AuthorizeRequest(req, nil, ""); err != nil {
@@ -234,6 +237,7 @@ func (sc *StorageClient) GetEncryptedRecords(collectionName string, keyBundle *K
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", USER_AGENT)
 
 	hawkCredentials := fxa.NewHawkCredentials(sc.hawkKeyId, []byte(sc.hawkKey))
 	if err := hawkCredentials.AuthorizeRequest(req, nil, ""); err != nil {

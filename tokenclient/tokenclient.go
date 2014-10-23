@@ -12,6 +12,8 @@ import (
 	"net/http"
 )
 
+const USER_AGENT = "SyncAPI/0.1 (https://github.com/st3fan/moz-syncapi)"
+
 type TokenClient struct {
 }
 
@@ -39,6 +41,7 @@ func (tc *TokenClient) ExchangeToken(assertion, service, version, clientState st
 	req.Header.Set("Authorization", "BrowserID "+assertion)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Client-State", clientState)
+	req.Header.Set("User-Agent", USER_AGENT)
 
 	res, err := client.Do(req)
 	if err != nil {
