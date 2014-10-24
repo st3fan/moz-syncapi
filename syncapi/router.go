@@ -96,7 +96,7 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 
 	usernameAndPassword := strings.SplitN(string(usernamePassword), ":", 2)
 	if len(usernameAndPassword) != 2 {
-		http.Error(w, "authorization failed", http.StatusUnauthorized)
+		requireBasicAuth(w, "Invalid Authorization Header (Failed to split username and password)")
 		return nil
 	}
 
@@ -109,6 +109,7 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 
 	client, err := fxa.NewClient(usernameAndPassword[0], usernameAndPassword[1])
 	if err != nil {
+		log.Print("Could not create Fxa Client: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
@@ -119,18 +120,19 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 	}
 
 	if err := client.FetchKeys(); err != nil {
-		http.Error(w, "Authorization failed: "+err.Error(), http.StatusUnauthorized)
+		requireBasicAuth(w, "FetchKeys Failed: "+err.Error())
 		return nil
 	}
 
 	key, err := generateRandomKey()
 	if err != nil {
-		log.Fatal("Could not generate DSA key: ", err)
+		log.Print("Could not generate DSA key: ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
 	cert, err := client.SignCertificate(key)
 	if err != nil {
-		http.Error(w, "Authorization failed: "+err.Error(), http.StatusUnauthorized)
+		requireBasicAuth(w, "SignCertificate Failed: "+err.Error())
 		return nil
 	}
 
@@ -141,6 +143,7 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 
 	assertion, err := webtoken.CreateAssertion(*key, cert, "https://token.services.mozilla.com", "127.0.0.1", issuedAt, expiresAt)
 	if err != nil {
+		log.Print("CreateAssertion Failed: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
@@ -150,6 +153,7 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 	tokenClient, _ := tokenclient.New()
 	tokenServerResponse, err := tokenClient.ExchangeToken(assertion, "sync", "1.5", deriveClientStateFromKey(client.KeyB))
 	if err != nil {
+		log.Print("ExchangeToken Failed: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
