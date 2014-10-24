@@ -21,13 +21,11 @@ func (e *CredentialsCacheEntry) IsExpired() bool {
 type CredentialsCache struct {
 	sync.Mutex
 	Entries map[string]CredentialsCacheEntry
-	TTL     time.Duration
 }
 
 func NewCredentialsCache(ttl time.Duration) *CredentialsCache {
 	return &CredentialsCache{
 		Entries: map[string]CredentialsCacheEntry{},
-		TTL:     ttl,
 	}
 }
 
@@ -44,11 +42,11 @@ func (cc *CredentialsCache) Get(username, password string) (Credentials, bool) {
 	return cacheEntry.Credentials, ok
 }
 
-func (cc *CredentialsCache) Put(credentials Credentials) {
+func (cc *CredentialsCache) Put(credentials Credentials, duration time.Duration) {
 	cc.Lock()
 	cc.Entries[credentials.Username+":"+credentials.Password] = CredentialsCacheEntry{
 		Credentials: credentials,
-		Expires:     time.Now().Add(cc.TTL),
+		Expires:     time.Now().Add(duration),
 	}
 	cc.Unlock()
 }

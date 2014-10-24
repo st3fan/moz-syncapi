@@ -170,7 +170,7 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 		ApiKey:      tokenServerResponse.Key,
 	}
 
-	app.credentialsCache.Put(credentials)
+	app.credentialsCache.Put(credentials, time.Duration(tokenServerResponse.Duration-15)*time.Second)
 
 	return &credentials
 }
