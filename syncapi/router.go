@@ -316,6 +316,80 @@ func (app *Application) HandleHistoryRecent(w http.ResponseWriter, r *http.Reque
 
 //
 
+type BookmarkPayload struct {
+	Id       string   `json:"id"`
+	Type     string   `json:"type"`
+	ParentId string   `json:"parentId"`
+	URL      string   `json:"bmkUri"`
+	Tags     []string `json:"tags"`
+	Title    string   `json:"title"`
+	Children []string `json:"children"`
+	Modified float64  `json:"modified"`
+}
+
+type BookmarkPayloads []BookmarkPayload
+
+func (slice BookmarkPayloads) Len() int {
+	return len(slice)
+}
+
+func (slice BookmarkPayloads) Less(i, j int) bool {
+	return slice[i].Modified < slice[j].Modified
+}
+
+func (slice BookmarkPayloads) Swap(i, j int) {
+	slice[i], slice[j] = slice[j], slice[i]
+}
+
+func (app *Application) HandleBookmarksRecent(w http.ResponseWriter, r *http.Request) {
+	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			// Load the most recent history
+
+			records, err := storageClient.GetEncryptedRecords("bookmarks", nil, &sync.GetRecordsOptions{Limit: 100, Sort: "newest"})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			bookmarkPayloads := BookmarkPayloads{}
+			for _, record := range records {
+				bookmarkPayload := BookmarkPayload{}
+				if err = json.Unmarshal([]byte(record.Payload), &bookmarkPayload); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				// There is no last visited time in bookmarks data so we use the time from the sync record
+				bookmarkPayload.Modified = record.Modified
+				// We are only interested in bookmarks, not folders
+				if bookmarkPayload.Type == "bookmark" {
+					bookmarkPayloads = append(bookmarkPayloads, bookmarkPayload)
+				}
+			}
+
+			// sort.Sort(sort.Reverse(historyPayloads))
+
+			encodedBookmarks, err := json.Marshal(bookmarkPayloads)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(encodedBookmarks)
+		}
+	}
+}
+
+func (app *Application) HandleBookmarksRecentMobile(w http.ResponseWriter, r *http.Request) {
+	// if credentials := app.authenticate(w, r); credentials != nil {
+	// 	if storageClient := app.login(w, r, credentials); storageClient != nil {
+	// 	}
+	// }
+}
+
+//
+
 func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	app := &Application{
 		config:           config,
@@ -324,5 +398,7 @@ func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	r.HandleFunc("/1.0/profile", app.HandleProfile)
 	r.HandleFunc("/1.0/tabs", app.HandleTabs)
 	r.HandleFunc("/1.0/history/recent", app.HandleHistoryRecent)
+	r.HandleFunc("/1.0/bookmarks/recent", app.HandleBookmarksRecent)
+	r.HandleFunc("/1.0/bookmarks/recent/mobile", app.HandleBookmarksRecentMobile)
 	return app, nil
 }
