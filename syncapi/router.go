@@ -388,6 +388,60 @@ func (app *Application) HandleBookmarksRecentMobile(w http.ResponseWriter, r *ht
 	// }
 }
 
+type PostBookmarkRequest struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Request) {
+	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			decoder := json.NewDecoder(r.Body)
+			var request PostBookmarkRequest
+			if err := decoder.Decode(&request); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// {"id":"-iXU0yMqZGrA",
+			//  "type":"bookmark",
+			//  "parentId":"unfiled",
+			//  "bmkUri":"http://www.golangweekly.com/",
+			//  "tags":[],
+			//  "title":"Go(lang) Newsletter",
+			//  "children":null,
+			//  "modified":1.4141677889e+09}
+
+			payload := BookmarkPayload{
+				Id:       sync.RandomRecordId(),
+				Modified: sync.TimestampNow(),
+				URL:      request.URL,
+				Title:    request.Title,
+				Type:     "bookmark",
+				ParentId: "unfiled",
+				Tags:     []string{},
+			}
+
+			encodedPayload, err := json.Marshal(payload)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			record := sync.Record{
+				Id:       payload.Id,
+				Modified: payload.Modified,
+				Payload:  string(encodedPayload),
+			}
+
+			if _, err := storageClient.PutEncryptedRecord("bookmarks", record, nil); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+}
+
 //
 
 func SetupRouter(r *mux.Router, config Config) (*Application, error) {
@@ -399,6 +453,7 @@ func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	r.HandleFunc("/1.0/tabs", app.HandleTabs)
 	r.HandleFunc("/1.0/history/recent", app.HandleHistoryRecent)
 	r.HandleFunc("/1.0/bookmarks/recent", app.HandleBookmarksRecent)
+	r.HandleFunc("/1.0/bookmarks", app.HandlePostBookmarks).Methods("POST")
 	r.HandleFunc("/1.0/bookmarks/recent/mobile", app.HandleBookmarksRecentMobile)
 	return app, nil
 }

@@ -7,83 +7,19 @@ package sync
 import (
 	"bytes"
 	"code.google.com/p/go.crypto/hkdf"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/st3fan/gofxa/fxa"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strconv"
 )
 
 const USER_AGENT = "SyncAPI/0.1 (https://github.com/st3fan/moz-syncapi)"
-
-type EncryptedPayload struct {
-	CipherText string `json:"ciphertext"`
-	IV         string `json:"IV"`
-	HMAC       string `json:"HMAC"`
-}
-
-type Record struct {
-	Id       string  `json:"id"`
-	Modified float64 `json:"modified"`
-	Payload  string  `json:"payload"`
-}
-
-func (r *Record) Decrypt(keyBundle *KeyBundle) error {
-	encryptedPayload := &EncryptedPayload{}
-	if err := json.Unmarshal([]byte(r.Payload), encryptedPayload); err != nil {
-		return errors.New("Record does not have an encrypted payload")
-	}
-
-	HMAC, err := hex.DecodeString(encryptedPayload.HMAC)
-	if err != nil {
-		return errors.New("Malformed HMAC in record")
-	}
-
-	// Verify the payload
-
-	mac := hmac.New(sha256.New, keyBundle.ValidationKey)
-	mac.Write([]byte(encryptedPayload.CipherText))
-	if !bytes.Equal(mac.Sum(nil), HMAC) {
-		return errors.New("Record validation failed")
-	}
-
-	// Decrypt the payload
-
-	ciphertext, err := base64.StdEncoding.DecodeString(encryptedPayload.CipherText)
-	if err != nil {
-		return errors.New("Malformed ciphertext in record")
-	}
-
-	iv, err := base64.StdEncoding.DecodeString(encryptedPayload.IV)
-	if err != nil {
-		return errors.New("Malformed IV in record")
-	}
-
-	block, err := aes.NewCipher(keyBundle.EncryptionKey)
-	if err != nil {
-		return err
-	}
-
-	mode := cipher.NewCBCDecrypter(block, iv)
-	mode.CryptBlocks(ciphertext, ciphertext)
-
-	// TODO: Is there a stdlib something to deal with PKCS7 padding?
-	length := len(ciphertext)
-	unpadding := int(ciphertext[length-1])
-	ciphertext = ciphertext[:(length - unpadding)]
-
-	r.Payload = string(ciphertext)
-
-	return nil
-}
 
 //
 
@@ -285,4 +221,49 @@ func (sc *StorageClient) Login() error {
 	}
 	sc.keyBundle = keyBundle
 	return nil
+}
+
+func (sc *StorageClient) PutEncryptedRecord(collectionName string, record Record, keyBundle *KeyBundle) (string, error) {
+	if keyBundle == nil {
+		keyBundle = &sc.keyBundle
+	}
+
+	if err := record.Encrypt(keyBundle); err != nil {
+		return "", err
+	}
+
+	encodedRecord, err := json.Marshal(&record)
+	if err != nil {
+		return "", err
+	}
+
+	// Upload the record
+
+	url := sc.endpoint + "/storage/" + collectionName + "/" + record.Id
+
+	client := &http.Client{}
+
+	req, err := http.NewRequest("PUT", url, bytes.NewReader(encodedRecord))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", USER_AGENT)
+
+	hawkCredentials := fxa.NewHawkCredentials(sc.hawkKeyId, []byte(sc.hawkKey))
+	if err := hawkCredentials.AuthorizeRequest(req, bytes.NewReader(encodedRecord), ""); err != nil {
+		return "", err
+	}
+
+	res, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return "", errors.New(res.Status) // TODO: Proper errors based on what the server returns
+	}
+
+	return record.Id, nil
 }
