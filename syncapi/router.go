@@ -317,14 +317,15 @@ func (app *Application) HandleHistoryRecent(w http.ResponseWriter, r *http.Reque
 //
 
 type BookmarkPayload struct {
-	Id       string   `json:"id"`
-	Type     string   `json:"type"`
-	ParentId string   `json:"parentId"`
-	URL      string   `json:"bmkUri"`
-	Tags     []string `json:"tags"`
-	Title    string   `json:"title"`
-	Children []string `json:"children"`
-	Modified float64  `json:"modified"`
+	Id         string   `json:"id"`
+	Type       string   `json:"type"`
+	ParentId   string   `json:"parentid"`
+	ParentName string   `json:"parentName"`
+	URL        string   `json:"bmkUri"`
+	Tags       []string `json:"tags"`
+	Title      string   `json:"title"`
+	Children   []string `json:"children,omitempty"`
+	Modified   float64  `json:"modified,omitempty"`
 }
 
 type BookmarkPayloads []BookmarkPayload
@@ -403,18 +404,24 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 				return
 			}
 
-			// {"id":"-iXU0yMqZGrA",
-			//  "type":"bookmark",
-			//  "parentId":"unfiled",
-			//  "bmkUri":"http://www.golangweekly.com/",
-			//  "tags":[],
-			//  "title":"Go(lang) Newsletter",
-			//  "children":null,
-			//  "modified":1.4141677889e+09}
+			// First upload a new bookmark record
 
-			payload := BookmarkPayload{
-				Id:       sync.RandomRecordId(),
-				Modified: sync.TimestampNow(),
+			//ts := sync.TimestampNow()
+
+			// {"id":"QgGdEjN75N2J",
+			//  "type":"bookmark",
+			//  "title":"Replacing Dropbox with BitTorrent Sync | @jnoxon's thoughts",
+			//  "parentName":"Unsorted Bookmarks",
+			//  "bmkUri":"http://jeff.noxon.cc/2014/10/28/replacing-dropbox-with-bittorrent-sync/",
+			//  "tags":[],
+			//  "keyword":null,
+			//  "description":"",
+			//  "loadInSidebar":false,
+			//  "parentid":"unfiled"}
+
+			bookmarkPayload := BookmarkPayload{
+				Id: sync.RandomRecordId(),
+				//Modified: ts,
 				URL:      request.URL,
 				Title:    request.Title,
 				Type:     "bookmark",
@@ -422,22 +429,73 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 				Tags:     []string{},
 			}
 
-			encodedPayload, err := json.Marshal(payload)
+			encodedBookmarkPayload, err := json.Marshal(bookmarkPayload)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			record := sync.Record{
-				Id:       payload.Id,
-				Modified: payload.Modified,
-				Payload:  string(encodedPayload),
+			bookmarkRecord := sync.Record{
+				Id: bookmarkPayload.Id,
+				//Modified:  bookmarkPayload.Modified,
+				Payload:   string(encodedBookmarkPayload),
+				SortIndex: 175,
 			}
 
-			if _, err := storageClient.PutEncryptedRecord("bookmarks", record, nil); err != nil {
+			// Then add the bookmark id to the unfiled record
+
+			// {"id":"unfiled",
+			//  "type": "folder",
+			//  "parentName":"",
+			//  "title":"Unsorted Bookmarks",
+			//  "description":null,
+			//  "children":["NdCgXw7rN3Fz","QgGdEjN75N2J"],
+			//  "parentid":"places"}
+
+			unfiledRecord, err := storageClient.GetEncryptedRecord("bookmarks", "unfiled", nil)
+			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+
+			unfiledPayload := BookmarkPayload{}
+			if err = json.Unmarshal([]byte(unfiledRecord.Payload), &unfiledPayload); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			unfiledPayload.Modified = 0
+			unfiledPayload.Children = append(unfiledPayload.Children, bookmarkRecord.Id)
+
+			encodedUnfiledPayload, err := json.Marshal(unfiledPayload)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			updatedUnfiledRecord := sync.Record{
+				Id: unfiledPayload.Id,
+				//Modified:  unfiledPayload.Modified,
+				Payload:   string(encodedUnfiledPayload),
+				SortIndex: 1000000,
+			}
+
+			// Upload both records in the same batch
+
+			records := []sync.Record{updatedUnfiledRecord, bookmarkRecord}
+
+			if err := storageClient.PutEncryptedRecords("bookmarks", records, nil); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+}
+
+func (app *Application) HandleDeleteBookmarks(w http.ResponseWriter, r *http.Request) {
+	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			storageClient.DeleteCollection("bookmarks")
 		}
 	}
 }
@@ -454,6 +512,7 @@ func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	r.HandleFunc("/1.0/history/recent", app.HandleHistoryRecent)
 	r.HandleFunc("/1.0/bookmarks/recent", app.HandleBookmarksRecent)
 	r.HandleFunc("/1.0/bookmarks", app.HandlePostBookmarks).Methods("POST")
+	r.HandleFunc("/1.0/bookmarks", app.HandleDeleteBookmarks).Methods("DELETE")
 	r.HandleFunc("/1.0/bookmarks/recent/mobile", app.HandleBookmarksRecentMobile)
 	return app, nil
 }
