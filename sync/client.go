@@ -14,7 +14,6 @@ import (
 	"github.com/st3fan/gofxa/fxa"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strconv"
 )
@@ -266,4 +265,90 @@ func (sc *StorageClient) PutEncryptedRecord(collectionName string, record Record
 	}
 
 	return record.Id, nil
+}
+
+func (sc *StorageClient) PutEncryptedRecords(collectionName string, records []Record, keyBundle *KeyBundle) error {
+	if keyBundle == nil {
+		keyBundle = &sc.keyBundle
+	}
+
+	for i := 0; i < len(records); i++ {
+		if err := records[i].Encrypt(keyBundle); err != nil {
+			return err
+		}
+	}
+
+	encodedRecords, err := json.Marshal(&records)
+	if err != nil {
+		return err
+	}
+
+	// Upload the record
+
+	url := sc.endpoint + "/storage/" + collectionName
+
+	client := &http.Client{}
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(encodedRecords))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", USER_AGENT)
+
+	hawkCredentials := fxa.NewHawkCredentials(sc.hawkKeyId, []byte(sc.hawkKey))
+	if err := hawkCredentials.AuthorizeRequest(req, bytes.NewReader(encodedRecords), ""); err != nil {
+		return err
+	}
+
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer res.Body.Close()
+
+	// body, err := ioutil.ReadAll(res.Body)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// TODO Do something useful with the body
+
+	if res.StatusCode != http.StatusOK {
+		return errors.New(res.Status) // TODO: Proper errors based on what the server returns
+	}
+
+	return nil
+}
+
+func (sc *StorageClient) DeleteCollection(collectionName string) error {
+	url := sc.endpoint + "/storage/" + collectionName
+
+	client := &http.Client{}
+
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+	//req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", USER_AGENT)
+
+	hawkCredentials := fxa.NewHawkCredentials(sc.hawkKeyId, []byte(sc.hawkKey))
+	if err := hawkCredentials.AuthorizeRequest(req, nil, ""); err != nil {
+		return err
+	}
+
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return errors.New(res.Status) // TODO: Proper errors based on what the server returns
+	}
+
+	return nil
 }
