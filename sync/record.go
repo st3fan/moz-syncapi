@@ -21,13 +21,14 @@ import (
 type EncryptedPayload struct {
 	CipherText string `json:"ciphertext"`
 	IV         string `json:"IV"`
-	HMAC       string `json:"HMAC"`
+	HMAC       string `json:"hmac"`
 }
 
 type Record struct {
-	Id       string  `json:"id"`
-	Modified float64 `json:"modified"`
-	Payload  string  `json:"payload"`
+	Id        string  `json:"id"`
+	Modified  float64 `json:"modified,omitempty"`
+	Payload   string  `json:"payload"`
+	SortIndex int     `json:"sortindex"`
 }
 
 func (r *Record) Encrypt(keyBundle *KeyBundle) error {
