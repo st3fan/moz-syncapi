@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func randomRecordId() string {
+func RandomRecordId() string {
 	const alphanum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	var bytes = make([]byte, 12)
 	rand.Read(bytes)
@@ -15,7 +15,7 @@ func randomRecordId() string {
 	return string(bytes)
 }
 
-func timestampNow() float64 {
+func TimestampNow() float64 {
 	return float64(time.Now().UnixNano()/10000000) / 100
 }
 

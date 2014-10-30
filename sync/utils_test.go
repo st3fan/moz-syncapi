@@ -6,7 +6,7 @@ import (
 )
 
 func Test_randomRecordId(t *testing.T) {
-	recordId := randomRecordId()
+	recordId := RandomRecordId()
 	if len(recordId) != 12 {
 		t.Error("randomRecordId did not return 12 character string")
 	}
