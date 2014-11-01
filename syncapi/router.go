@@ -396,13 +396,6 @@ func (app *Application) HandleBookmarksRecent(w http.ResponseWriter, r *http.Req
 	}
 }
 
-func (app *Application) HandleBookmarksRecentMobile(w http.ResponseWriter, r *http.Request) {
-	// if credentials := app.authenticate(w, r); credentials != nil {
-	// 	if storageClient := app.login(w, r, credentials); storageClient != nil {
-	// 	}
-	// }
-}
-
 type PostBookmarkRequest struct {
 	Title string `json:"title"`
 	URL   string `json:"url"`
@@ -503,14 +496,6 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (app *Application) HandleDeleteBookmarks(w http.ResponseWriter, r *http.Request) {
-	if credentials := app.authenticate(w, r); credentials != nil {
-		if storageClient := app.login(w, r, credentials); storageClient != nil {
-			storageClient.DeleteCollection("bookmarks")
-		}
-	}
-}
-
 //
 
 func SetupRouter(r *mux.Router, config Config) (*Application, error) {
@@ -518,12 +503,13 @@ func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 		config:           config,
 		credentialsCache: NewCredentialsCache(CREDENTIALS_CACHE_TTL),
 	}
+
 	r.HandleFunc("/1.0/profile", app.HandleProfile)
 	r.HandleFunc("/1.0/tabs", app.HandleTabs)
 	r.HandleFunc("/1.0/history/recent", app.HandleHistoryRecent)
 	r.HandleFunc("/1.0/bookmarks/recent", app.HandleBookmarksRecent)
 	r.HandleFunc("/1.0/bookmarks", app.HandlePostBookmarks).Methods("POST")
-	r.HandleFunc("/1.0/bookmarks", app.HandleDeleteBookmarks).Methods("DELETE")
 	r.HandleFunc("/1.0/bookmarks/recent/mobile", app.HandleBookmarksRecentMobile)
+
 	return app, nil
 }
