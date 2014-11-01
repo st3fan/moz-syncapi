@@ -509,7 +509,6 @@ func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	r.HandleFunc("/1.0/history/recent", app.HandleHistoryRecent)
 	r.HandleFunc("/1.0/bookmarks/recent", app.HandleBookmarksRecent)
 	r.HandleFunc("/1.0/bookmarks", app.HandlePostBookmarks).Methods("POST")
-	r.HandleFunc("/1.0/bookmarks/recent/mobile", app.HandleBookmarksRecentMobile)
 
 	return app, nil
 }
