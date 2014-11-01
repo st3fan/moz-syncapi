@@ -44,6 +44,17 @@ type Credentials struct {
 	ApiKey      string
 }
 
+func writeJSONResponse(w http.ResponseWriter, v interface{}) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
+}
+
 func generateRandomKey() (*dsa.PrivateKey, error) {
 	params := new(dsa.Parameters)
 	if err := dsa.GenerateParameters(params, rand.Reader, dsa.L1024N160); err != nil {
@@ -100,9 +111,11 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 		return nil
 	}
 
-	credentials, ok := app.credentialsCache.Get(usernameAndPassword[0], usernameAndPassword[1])
-	if ok {
-		return &credentials
+	if app.credentialsCache != nil {
+		credentials, ok := app.credentialsCache.Get(usernameAndPassword[0], usernameAndPassword[1])
+		if ok {
+			return &credentials
+		}
 	}
 
 	// Do the FxA dance
@@ -160,7 +173,7 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 
 	//
 
-	credentials = Credentials{
+	credentials := Credentials{
 		Email:       usernameAndPassword[0],
 		Password:    usernameAndPassword[1],
 		KeyA:        client.KeyA,
@@ -170,7 +183,9 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 		ApiKey:      tokenServerResponse.Key,
 	}
 
-	app.credentialsCache.Put(credentials, time.Duration(tokenServerResponse.Duration-15)*time.Second)
+	if app.credentialsCache != nil {
+		app.credentialsCache.Put(credentials, time.Duration(tokenServerResponse.Duration-15)*time.Second)
+	}
 
 	return &credentials
 }
@@ -178,8 +193,8 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 //
 
 type ProfileResponse struct {
-	Email string `json:"title"`
-	Name   string `json:"url"`
+	Email  string `json:"email"`
+	Name   string `json:"name"`
 	Avatar string `json:"avatar"`
 }
 
@@ -254,14 +269,7 @@ func (app *Application) HandleTabs(w http.ResponseWriter, r *http.Request) {
 				tabsPayloads = append(tabsPayloads, tabsPayload)
 			}
 
-			encodedTabs, err := json.Marshal(tabsPayloads)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(encodedTabs)
+			writeJSONResponse(w, tabsPayloads)
 		}
 	}
 }
@@ -322,14 +330,7 @@ func (app *Application) HandleHistoryRecent(w http.ResponseWriter, r *http.Reque
 
 			sort.Sort(sort.Reverse(historyPayloads))
 
-			encodedHistory, err := json.Marshal(historyPayloads)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(encodedHistory)
+			writeJSONResponse(w, historyPayloads)
 		}
 	}
 }
@@ -390,14 +391,7 @@ func (app *Application) HandleBookmarksRecent(w http.ResponseWriter, r *http.Req
 
 			// sort.Sort(sort.Reverse(historyPayloads))
 
-			encodedBookmarks, err := json.Marshal(bookmarkPayloads)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(encodedBookmarks)
+			writeJSONResponse(w, bookmarkPayloads)
 		}
 	}
 }
