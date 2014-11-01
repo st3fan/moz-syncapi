@@ -35,7 +35,7 @@ type Application struct {
 }
 
 type Credentials struct {
-	Username    string
+	Email    string
 	Password    string
 	KeyA        []byte
 	KeyB        []byte
@@ -161,7 +161,7 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 	//
 
 	credentials = Credentials{
-		Username:    usernameAndPassword[0],
+		Email:       usernameAndPassword[0],
 		Password:    usernameAndPassword[1],
 		KeyA:        client.KeyA,
 		KeyB:        client.KeyB,
@@ -177,8 +177,28 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 
 //
 
+type ProfileResponse struct {
+	Email string `json:"title"`
+	Name   string `json:"url"`
+	Avatar string `json:"avatar"`
+}
+
 func (app *Application) HandleProfile(w http.ResponseWriter, r *http.Request) {
 	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			profileResponse := ProfileResponse{
+				Email: credentials.Email,
+			}
+
+			encodedProfileResponse, err := json.Marshal(profileResponse)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(encodedProfileResponse)
+		}
 	}
 }
 

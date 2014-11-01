@@ -44,7 +44,7 @@ func (cc *CredentialsCache) Get(username, password string) (Credentials, bool) {
 
 func (cc *CredentialsCache) Put(credentials Credentials, duration time.Duration) {
 	cc.Lock()
-	cc.Entries[credentials.Username+":"+credentials.Password] = CredentialsCacheEntry{
+	cc.Entries[credentials.Email+":"+credentials.Password] = CredentialsCacheEntry{
 		Credentials: credentials,
 		Expires:     time.Now().Add(duration),
 	}
