@@ -435,7 +435,6 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 
 			bookmarkPayload := BookmarkPayload{
 				Id: sync.RandomRecordId(),
-				//Modified: ts,
 				URL:      request.URL,
 				Title:    request.Title,
 				Type:     "bookmark",
@@ -451,7 +450,6 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 
 			bookmarkRecord := sync.Record{
 				Id: bookmarkPayload.Id,
-				//Modified:  bookmarkPayload.Modified,
 				Payload:   string(encodedBookmarkPayload),
 				SortIndex: 175,
 			}
@@ -489,7 +487,6 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 
 			updatedUnfiledRecord := sync.Record{
 				Id: unfiledPayload.Id,
-				//Modified:  unfiledPayload.Modified,
 				Payload:   string(encodedUnfiledPayload),
 				SortIndex: 1000000,
 			}
