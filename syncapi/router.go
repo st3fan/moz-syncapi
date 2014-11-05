@@ -35,7 +35,7 @@ type Application struct {
 }
 
 type Credentials struct {
-	Email    string
+	Email       string
 	Password    string
 	KeyA        []byte
 	KeyB        []byte
@@ -427,7 +427,7 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 			//  "parentid":"unfiled"}
 
 			bookmarkPayload := BookmarkPayload{
-				Id: sync.RandomRecordId(),
+				Id:       sync.RandomRecordId(),
 				URL:      request.URL,
 				Title:    request.Title,
 				Type:     "bookmark",
@@ -442,7 +442,7 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 			}
 
 			bookmarkRecord := sync.Record{
-				Id: bookmarkPayload.Id,
+				Id:        bookmarkPayload.Id,
 				Payload:   string(encodedBookmarkPayload),
 				SortIndex: 175,
 			}
@@ -479,7 +479,7 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 			}
 
 			updatedUnfiledRecord := sync.Record{
-				Id: unfiledPayload.Id,
+				Id:        unfiledPayload.Id,
 				Payload:   string(encodedUnfiledPayload),
 				SortIndex: 1000000,
 			}
@@ -498,6 +498,108 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 
 //
 
+type ClientCommand struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+}
+
+type ClientPayload struct {
+	Id        string          `json:"id"`
+	Name      string          `json:"name"`
+	Type      string          `json:"type"`
+	Version   string          `json:"version"`
+	Protocols []string        `json:"protocols"`
+	Commands  []ClientCommand `json:"commands,omitempty"`
+}
+
+func (app *Application) HandleGetClients(w http.ResponseWriter, r *http.Request) {
+	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			records, err := storageClient.GetEncryptedRecords("clients", nil, nil)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			clients := []ClientPayload{}
+			for _, record := range records {
+				log.Print(record.Payload)
+				client := ClientPayload{}
+				if err = json.Unmarshal([]byte(record.Payload), &client); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				clients = append(clients, client)
+			}
+
+			writeJSONResponse(w, clients)
+		}
+	}
+}
+
+//
+
+type PostClientTabRequest struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+func (app *Application) HandlePostClientsTab(w http.ResponseWriter, r *http.Request) {
+	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			var request PostClientTabRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Load the client record
+
+			clientRecord, err := storageClient.GetEncryptedRecord("clients", mux.Vars(r)["clientId"], nil)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			client := ClientPayload{}
+			if err = json.Unmarshal([]byte(clientRecord.Payload), &client); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Add the url to push
+
+			// TODO: This is not correct. What do we really need to do to the client record here?
+
+			command := ClientCommand{
+				Command: "displayURI",
+				Args:    []string{request.URL, "doesnotexist", request.Title},
+			}
+			client.Commands = append(client.Commands, command)
+
+			encodedClient, err := json.Marshal(client)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			clientRecord.Modified = sync.TimestampNow()
+			clientRecord.Payload = string(encodedClient)
+
+			// Send it back to the server
+
+			if _, err := storageClient.PutEncryptedRecord("clients", clientRecord, nil); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			writeJSONResponse(w, nil)
+		}
+	}
+}
+
+//
+
 func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	app := &Application{
 		config:           config,
@@ -509,6 +611,8 @@ func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	r.HandleFunc("/1.0/history/recent", app.HandleHistoryRecent)
 	r.HandleFunc("/1.0/bookmarks/recent", app.HandleBookmarksRecent)
 	r.HandleFunc("/1.0/bookmarks", app.HandlePostBookmarks).Methods("POST")
+	r.HandleFunc("/1.0/clients", app.HandleGetClients).Methods("GET")
+	r.HandleFunc("/1.0/clients/{clientId}/tab", app.HandlePostClientsTab).Methods("POST")
 
 	return app, nil
 }
