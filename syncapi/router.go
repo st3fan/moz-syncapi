@@ -569,8 +569,6 @@ func (app *Application) HandlePostClientsTab(w http.ResponseWriter, r *http.Requ
 
 			// Add the url to push
 
-			// TODO: This is not correct. What do we really need to do to the client record here?
-
 			command := ClientCommand{
 				Command: "displayURI",
 				Args:    []string{request.URL, "doesnotexist", request.Title},
