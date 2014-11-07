@@ -35,13 +35,24 @@ type Application struct {
 }
 
 type Credentials struct {
-	Username    string
+	Email       string
 	Password    string
 	KeyA        []byte
 	KeyB        []byte
 	ApiEndpoint string
 	ApiKeyId    string
 	ApiKey      string
+}
+
+func writeJSONResponse(w http.ResponseWriter, v interface{}) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
 }
 
 func generateRandomKey() (*dsa.PrivateKey, error) {
@@ -100,9 +111,11 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 		return nil
 	}
 
-	credentials, ok := app.credentialsCache.Get(usernameAndPassword[0], usernameAndPassword[1])
-	if ok {
-		return &credentials
+	if app.credentialsCache != nil {
+		credentials, ok := app.credentialsCache.Get(usernameAndPassword[0], usernameAndPassword[1])
+		if ok {
+			return &credentials
+		}
 	}
 
 	// Do the FxA dance
@@ -160,8 +173,8 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 
 	//
 
-	credentials = Credentials{
-		Username:    usernameAndPassword[0],
+	credentials := Credentials{
+		Email:       usernameAndPassword[0],
 		Password:    usernameAndPassword[1],
 		KeyA:        client.KeyA,
 		KeyB:        client.KeyB,
@@ -170,15 +183,37 @@ func (app *Application) authenticate(w http.ResponseWriter, r *http.Request) *Cr
 		ApiKey:      tokenServerResponse.Key,
 	}
 
-	app.credentialsCache.Put(credentials, time.Duration(tokenServerResponse.Duration-15)*time.Second)
+	if app.credentialsCache != nil {
+		app.credentialsCache.Put(credentials, time.Duration(tokenServerResponse.Duration-15)*time.Second)
+	}
 
 	return &credentials
 }
 
 //
 
+type ProfileResponse struct {
+	Email  string `json:"email"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar"`
+}
+
 func (app *Application) HandleProfile(w http.ResponseWriter, r *http.Request) {
 	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			profileResponse := ProfileResponse{
+				Email: credentials.Email,
+			}
+
+			encodedProfileResponse, err := json.Marshal(profileResponse)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(encodedProfileResponse)
+		}
 	}
 }
 
@@ -234,14 +269,7 @@ func (app *Application) HandleTabs(w http.ResponseWriter, r *http.Request) {
 				tabsPayloads = append(tabsPayloads, tabsPayload)
 			}
 
-			encodedTabs, err := json.Marshal(tabsPayloads)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(encodedTabs)
+			writeJSONResponse(w, tabsPayloads)
 		}
 	}
 }
@@ -302,14 +330,7 @@ func (app *Application) HandleHistoryRecent(w http.ResponseWriter, r *http.Reque
 
 			sort.Sort(sort.Reverse(historyPayloads))
 
-			encodedHistory, err := json.Marshal(historyPayloads)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(encodedHistory)
+			writeJSONResponse(w, historyPayloads)
 		}
 	}
 }
@@ -370,23 +391,9 @@ func (app *Application) HandleBookmarksRecent(w http.ResponseWriter, r *http.Req
 
 			// sort.Sort(sort.Reverse(historyPayloads))
 
-			encodedBookmarks, err := json.Marshal(bookmarkPayloads)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(encodedBookmarks)
+			writeJSONResponse(w, bookmarkPayloads)
 		}
 	}
-}
-
-func (app *Application) HandleBookmarksRecentMobile(w http.ResponseWriter, r *http.Request) {
-	// if credentials := app.authenticate(w, r); credentials != nil {
-	// 	if storageClient := app.login(w, r, credentials); storageClient != nil {
-	// 	}
-	// }
 }
 
 type PostBookmarkRequest struct {
@@ -420,8 +427,7 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 			//  "parentid":"unfiled"}
 
 			bookmarkPayload := BookmarkPayload{
-				Id: sync.RandomRecordId(),
-				//Modified: ts,
+				Id:       sync.RandomRecordId(),
 				URL:      request.URL,
 				Title:    request.Title,
 				Type:     "bookmark",
@@ -436,8 +442,7 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 			}
 
 			bookmarkRecord := sync.Record{
-				Id: bookmarkPayload.Id,
-				//Modified:  bookmarkPayload.Modified,
+				Id:        bookmarkPayload.Id,
 				Payload:   string(encodedBookmarkPayload),
 				SortIndex: 175,
 			}
@@ -474,8 +479,7 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 			}
 
 			updatedUnfiledRecord := sync.Record{
-				Id: unfiledPayload.Id,
-				//Modified:  unfiledPayload.Modified,
+				Id:        unfiledPayload.Id,
 				Payload:   string(encodedUnfiledPayload),
 				SortIndex: 1000000,
 			}
@@ -492,10 +496,102 @@ func (app *Application) HandlePostBookmarks(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (app *Application) HandleDeleteBookmarks(w http.ResponseWriter, r *http.Request) {
+//
+
+type ClientCommand struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+}
+
+type ClientPayload struct {
+	Id        string          `json:"id"`
+	Name      string          `json:"name"`
+	Type      string          `json:"type"`
+	Version   string          `json:"version"`
+	Protocols []string        `json:"protocols"`
+	Commands  []ClientCommand `json:"commands,omitempty"`
+}
+
+func (app *Application) HandleGetClients(w http.ResponseWriter, r *http.Request) {
 	if credentials := app.authenticate(w, r); credentials != nil {
 		if storageClient := app.login(w, r, credentials); storageClient != nil {
-			storageClient.DeleteCollection("bookmarks")
+			records, err := storageClient.GetEncryptedRecords("clients", nil, nil)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			clients := []ClientPayload{}
+			for _, record := range records {
+				log.Print(record.Payload)
+				client := ClientPayload{}
+				if err = json.Unmarshal([]byte(record.Payload), &client); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				clients = append(clients, client)
+			}
+
+			writeJSONResponse(w, clients)
+		}
+	}
+}
+
+//
+
+type PostClientTabRequest struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+func (app *Application) HandlePostClientsTab(w http.ResponseWriter, r *http.Request) {
+	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			var request PostClientTabRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Load the client record
+
+			clientRecord, err := storageClient.GetEncryptedRecord("clients", mux.Vars(r)["clientId"], nil)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			client := ClientPayload{}
+			if err = json.Unmarshal([]byte(clientRecord.Payload), &client); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Add the url to push
+
+			command := ClientCommand{
+				Command: "displayURI",
+				Args:    []string{request.URL, "doesnotexist", request.Title},
+			}
+			client.Commands = append(client.Commands, command)
+
+			encodedClient, err := json.Marshal(client)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			clientRecord.Modified = sync.TimestampNow()
+			clientRecord.Payload = string(encodedClient)
+
+			// Send it back to the server
+
+			if _, err := storageClient.PutEncryptedRecord("clients", clientRecord, nil); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			writeJSONResponse(w, nil)
 		}
 	}
 }
@@ -507,12 +603,14 @@ func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 		config:           config,
 		credentialsCache: NewCredentialsCache(CREDENTIALS_CACHE_TTL),
 	}
+
 	r.HandleFunc("/1.0/profile", app.HandleProfile)
 	r.HandleFunc("/1.0/tabs", app.HandleTabs)
 	r.HandleFunc("/1.0/history/recent", app.HandleHistoryRecent)
 	r.HandleFunc("/1.0/bookmarks/recent", app.HandleBookmarksRecent)
 	r.HandleFunc("/1.0/bookmarks", app.HandlePostBookmarks).Methods("POST")
-	r.HandleFunc("/1.0/bookmarks", app.HandleDeleteBookmarks).Methods("DELETE")
-	r.HandleFunc("/1.0/bookmarks/recent/mobile", app.HandleBookmarksRecentMobile)
+	r.HandleFunc("/1.0/clients", app.HandleGetClients).Methods("GET")
+	r.HandleFunc("/1.0/clients/{clientId}/tab", app.HandlePostClientsTab).Methods("POST")
+
 	return app, nil
 }
