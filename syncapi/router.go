@@ -598,6 +598,21 @@ func (app *Application) HandlePostClientsTab(w http.ResponseWriter, r *http.Requ
 
 //
 
+func (app *Application) HandleGetStorageCollection(w http.ResponseWriter, r *http.Request) {
+	if credentials := app.authenticate(w, r); credentials != nil {
+		if storageClient := app.login(w, r, credentials); storageClient != nil {
+			records, err := storageClient.GetEncryptedRecords(mux.Vars(r)["collectionName"], nil, &sync.GetRecordsOptions{Limit: 1000, Sort: "newest"})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSONResponse(w, records)
+		}
+	}
+}
+
+//
+
 func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	app := &Application{
 		config:           config,
@@ -611,6 +626,8 @@ func SetupRouter(r *mux.Router, config Config) (*Application, error) {
 	r.HandleFunc("/1.0/bookmarks", app.HandlePostBookmarks).Methods("POST")
 	r.HandleFunc("/1.0/clients", app.HandleGetClients).Methods("GET")
 	r.HandleFunc("/1.0/clients/{clientId}/tab", app.HandlePostClientsTab).Methods("POST")
+
+	r.HandleFunc("/storage/{collectionName}", app.HandleGetStorageCollection).Methods("GET")
 
 	return app, nil
 }
