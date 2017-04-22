@@ -6,7 +6,7 @@ package sync
 
 import (
 	"bytes"
-	"code.google.com/p/go.crypto/hkdf"
+	"golang.org/x/crypto/hkdf"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
